@@ -115,7 +115,6 @@ deletes files that no build of the last 7 days referenced. Rollback is redeployi
 - `esoul-guidelines.json` of this repository holds the layers for the shared documentation; each submodule has its own.
 - This repository has a `composer.json` with `esoul-cz/guidelines` as a dev dependency: `composer install`, then `vendor/bin/esoul-guidelines sync`
   (`composer update` runs it) and `vendor/bin/esoul-guidelines check`. Nothing is built from here and it has no pipeline, so nothing checks it in CI; if you
-  add one, run `esoul-guidelines check` in it, e.g. in the Docker image
-  `docker run --rm -v "$PWD:/app" -w /app --user "$(id -u):$(id -g)" rg.fr-par.scw.cloud/testing-images/esoul-guidelines:0.3 check`.
-  The submodules have no `vendor/`: their READMEs ("Guidelines") give three ways to run the command without PHP in the project (Composer global, the PHAR, Docker),
-  and their `Jenkinsfile` runs `check` in the Docker image.
+  add one, run `vendor/bin/esoul-guidelines check` after `composer install` (the version of its `composer.lock`).
+  The submodules have no `vendor/`: their READMEs ("Guidelines") show how to run the command without PHP in the project (Composer global, the PHAR of the
+  recorded version, Docker), and the `astroPipeline` of their `Jenkinsfile` runs `check` with the version recorded in their `esoul-guidelines.lock`.
