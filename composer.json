@@ -1,0 +1,19 @@
+{
+    "name": "esoul-cz/template-astro-cms",
+    "description": "eSoul monorepo root of a static Astro site with a headless CMS: README, the contract, one NGINX site, and git submodules for the frontend and the backend.",
+    "require-dev": {
+        "esoul-cz/guidelines": "^0.3"
+    },
+    "scripts": {
+        "post-update-cmd": [
+            "esoul-guidelines sync"
+        ],
+        "submodules": "sh bin/add-submodules",
+        "post-create-project-cmd": [
+            "@php -r \"is_dir('.esoul') || mkdir('.esoul', 0755, true); is_file('LICENSE') && rename('LICENSE', '.esoul/template-LICENSE');\"",
+            "@composer config license proprietary"
+        ]
+    },
+    "type": "project",
+    "license": "MIT"
+}

@@ -1,0 +1,364 @@
+# EXAMPLE: one NGINX site definition for a static Astro site (frontend) and its Laravel + Filament CMS (backend).
+# Replace the domain, the paths under /data/apps/example-project and the upstream name.
+#
+# DEFAULT (active below): the backend on a SUBDOMAIN, admin.example-project.example.com.   RECOMMENDED
+# EXCEPTION (commented at the end): the backend under /admin of the site's domain. Use it only when one hostname is forced;
+# it needs the Livewire routes moved under /admin and a session cookie scoped to /admin (README, "Where the backend lives").
+#
+# Environment of the backend (.env) and of the frontend build in both modes:
+#                     SUBDOMAIN (default)                      PATH (exception)
+#   APP_URL           https://admin.example.com                https://example.com
+#   SESSION_DOMAIN    null (host-only cookie; NEVER            null
+#                     `.example.com`: the admin session must
+#                     not reach the public site)
+#   SESSION_PATH      /                                        /admin   (cookie only goes to the admin)
+#   CMS_ADMIN_PATH_MODE  false (default)                       true     (Livewire update/upload routes under /admin)
+#   CMS_FORMS_ALLOWED_ORIGINS  https://example.com             https://example.com
+#   CMS_API_URL       https://admin.example.com/cms-api/v1     https://example.com/cms-api/v1
+#                     (frontend build, Jenkinsfile `releaseEnv.CMS_API_URL`)
+#   SITE_URL          https://example.com                      https://example.com
+#   TRUSTED_PROXIES   the TLS proxy in front of nginx (both modes), never `*`
+#   CORS              not needed: the static build fetches the export server-side (Node, in Jenkins) and visitors' browsers
+#                     post forms as plain navigations. The JSON variant of the form endpoint sets its own CORS header.
+#   CMS_API_ALLOWED_IPS  both modes: the address of the Jenkins build agent. /cms-api is reachable from the internet (Jenkins
+#                     uses the public URL), so the allowlist is the only gate besides the bearer tokens.
+#
+# The build checks every media file with HEAD against the ORIGIN OF CMS_API_URL, so the backend host serves /_cms/ too (same
+# alias). The site serves /_cms/ on its own domain as well, because the HTML refers to it with a relative URL.
+#
+# TLS ends on a proxy in front: HTTP with X-Forwarded-* arrives here. php-fpm runs in the container of the backend's Komodo stack
+# without a published port; the upstream name is the service name in the compose file. Everything is served from the run
+# directories of the two stacks (/data/apps/example-project/...).
+#
+# The backend gets only this:
+#   /admin            Filament admin
+#   /cms-api          content export for the site build + the callback of Jenkins (IP allowlist in the backend)
+#   /forms            form endpoint (POST /forms/contact), called by the browsers of the visitors
+#   /livewire-<hash>  Livewire (script, update and upload endpoints; the prefix is derived from APP_KEY)
+#   /up               health check
+# Served from the backend's directories, not by php (aliases below):
+#   /_cms/            content-addressed public media (written by the export, pruned by cms:prune-public-media)
+#   /cms-media/       uploads of the admin (previews in Filament)
+#   /build, /css|js|fonts/filament   assets of the admin panel (public/ of the backend, copied from the image after each deploy)
+# Everything else is the static site: the Komodo deploy hook of the frontend stack copies the image into releases/<id> and
+# switches the link `web/current`; nginx resolves it on every request.
+#
+# Security headers: docker/nginx-security-headers.conf as /etc/nginx/snippets/security-headers.conf.
+
+upstream example-project-be {
+    server example-project-be:9000;
+}
+
+# Redirect to HTTPS unless the request came through the TLS proxy, except the internal health check /up.
+map "$http_x_forwarded_proto:$uri" $redirect_to_https {
+    default     1;
+    "~^https:"  0;
+    "~^[^:]*:/up$" 0;
+}
+
+# ====================================================================================================================
+# DEFAULT: backend on admin.example-project.example.com
+# ====================================================================================================================
+
+# ---------------------------------------------------------------------------------------------------- the static site
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example-project.example.com;
+
+    # The real client IP in the access log. Laravel reads the forwarded address itself (TRUSTED_PROXIES), this is for nginx.
+    # set_real_ip_from <address of the TLS proxy>;
+    # real_ip_header X-Forwarded-For;
+
+    server_tokens off;
+
+    # A missing page = the 404.html of the build with status 404.
+    error_page 404 /404.html;
+
+    include /etc/nginx/snippets/security-headers.conf;
+
+    # TLS ends on the proxy; an absolute redirect would be composed as http://host:port/…
+    absolute_redirect off;
+
+    # Fixed host ($server_name), never $host from a client header.
+    if ($redirect_to_https) {
+        return 301 https://$server_name$request_uri;
+    }
+
+    # Symlink to the current release; nginx resolves it on every request.
+    root /data/apps/example-project/web/current;
+    index index.html;
+
+    location = /404.html {
+        internal;
+        # `always`: without it nginx drops the headers of a 404 response.
+        add_header Cache-Control "no-cache" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+    # `try_files $uri.html` would return /404 as a page with status 200.
+    location = /404 {
+        return 404;
+    }
+
+    # Dotfiles in the web root (.env, .git, …) never. /.well-known/ stays reachable.
+    location ~ /\.(?!well-known/) {
+        deny all;
+    }
+
+    location / {
+        # Astro generates /page/index.html. `$uri/index.html` instead of `$uri/`, otherwise every link without a
+        # trailing slash would cost a redirect.
+        try_files $uri $uri/index.html $uri.html =404;
+        # HTML must not be cached for long: old HTML with new /_astro assets would break.
+        add_header Cache-Control "no-cache";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Markdown versions of the pages (/index.md, /<slug>.md): older nginx versions know no type for .md.
+    location ~ \.md$ {
+        default_type text/markdown;
+        charset utf-8;
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Hashed names = immutable files, served from the current release. A page opened before a deploy can ask for a lazy chunk
+    # that the new release no longer holds and gets a 404 until it is reloaded (guidelines: deployment.md, "Hashed _astro files");
+    # when the deploy hook shares `_astro` between releases (planned), point `root` at web/shared here.
+    location ^~ /_astro/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Site media (name = content hash): the backend writes them when it serves the export (disk cms-public, persistent
+    # volume). They are not in the release. Images only; the sandbox forbids scripts even if something else lands here.
+    location ^~ /_cms/ {
+        alias /data/apps/example-project/be/storage/app/cms-public/;
+        try_files $uri =404;
+        types { image/png png; image/jpeg jpg; image/webp webp; image/avif avif; }
+        default_type application/octet-stream;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; sandbox" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+}
+
+# ------------------------------------------------------------------------------------------------ the backend (Laravel)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name admin.example-project.example.com;
+
+    server_tokens off;
+    include /etc/nginx/snippets/security-headers.conf;
+    # Image uploads in the admin (Filament).
+    client_max_body_size 64M;
+    absolute_redirect off;
+
+    if ($redirect_to_https) {
+        return 301 https://$server_name$request_uri;
+    }
+
+    # Nothing is served at the root of the backend host; send people to the panel.
+    location = / {
+        return 302 /admin;
+    }
+
+    location ~ /\.(?!well-known/) {
+        deny all;
+    }
+
+    # The export build checks the media on the origin of CMS_API_URL (this host).
+    location ^~ /_cms/ {
+        alias /data/apps/example-project/be/storage/app/cms-public/;
+        try_files $uri =404;
+        types { image/png png; image/jpeg jpg; image/webp webp; image/avif avif; }
+        default_type application/octet-stream;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; sandbox" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Uploads of the admin: images only, anything else downloads (never a page on the origin of the admin).
+    location ^~ /cms-media/ {
+        alias /data/apps/example-project/be/storage/app/cms-media/;
+        try_files $uri =404;
+        types { image/png png; image/jpeg jpg jpeg; image/webp webp; image/avif avif; }
+        default_type application/octet-stream;
+        add_header Cache-Control "public, max-age=86400";
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; sandbox" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Assets of the admin panel: copied from public/ of the backend image to the host after each deploy.
+    location ^~ /build/ {
+        root /data/apps/example-project/be/public;
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location ^~ /css/filament/ {
+        root /data/apps/example-project/be/public;
+        add_header Cache-Control "public, max-age=604800";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location ^~ /js/filament/ {
+        root /data/apps/example-project/be/public;
+        add_header Cache-Control "public, max-age=604800";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location ^~ /fonts/filament/ {
+        root /data/apps/example-project/be/public;
+        add_header Cache-Control "public, max-age=2592000";
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location ~ ^/(admin|cms-api|forms|livewire[^/]*)(/|$)|^/up$ {
+        fastcgi_pass example-project-be;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME /var/www/public/index.php;
+        fastcgi_hide_header X-Powered-By;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $http_x_forwarded_proto;
+        fastcgi_param HTTP_X_FORWARDED_FOR $http_x_forwarded_for;
+
+        set $custom_https off;
+        if ($http_x_forwarded_proto = 'https') {
+            set $custom_https on;
+        }
+        fastcgi_param HTTPS $custom_https;
+
+        # Image uploads and the export (which copies media) can take longer than the default 60 s.
+        fastcgi_read_timeout 300;
+    }
+}
+
+# ====================================================================================================================
+# EXCEPTION: backend under /admin of the site's domain (one hostname only)
+# Replace BOTH server blocks above with this one. The `upstream` and the `map` stay (declare them once).
+#
+# Backend .env: APP_URL=https://example.com, SESSION_DOMAIN=null, SESSION_PATH=/admin, CMS_ADMIN_PATH_MODE=true.
+#  - A host-only cookie is still sent with EVERY request to the host, so on a path it must be scoped to the backend's path
+#    (SESSION_PATH=/admin): the admin session never reaches the public site.
+#  - Livewire posts its updates and uploads to /livewire-<hash>/..., which is outside /admin, so the cookie would not be sent
+#    and the panel would break. CMS_ADMIN_PATH_MODE=true moves the Livewire update and upload routes to /admin/livewire/...
+#    (CmsServiceProvider). Only the script and the signed preview URLs stay on /livewire-<hash>/ (GET, no session needed).
+#  - The form endpoint /forms/contact has no session at all; /cms-api uses bearer tokens.
+#  - Only the backend's own paths are routed to it; everything else is the static site.
+# ====================================================================================================================
+#
+# server {
+#     listen 80;
+#     listen [::]:80;
+#     server_name example-project.example.com;
+#
+#     server_tokens off;
+#     error_page 404 /404.html;
+#     include /etc/nginx/snippets/security-headers.conf;
+#     client_max_body_size 64M;
+#     absolute_redirect off;
+#
+#     if ($redirect_to_https) {
+#         return 301 https://$server_name$request_uri;
+#     }
+#
+#     root /data/apps/example-project/web/current;
+#     index index.html;
+#
+#     location = /404.html {
+#         internal;
+#         add_header Cache-Control "no-cache" always;
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#     location = /404 {
+#         return 404;
+#     }
+#
+#     location ~ /\.(?!well-known/) {
+#         deny all;
+#     }
+#
+#     location / {
+#         try_files $uri $uri/index.html $uri.html =404;
+#         add_header Cache-Control "no-cache";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#
+#     location ~ \.md$ {
+#         default_type text/markdown;
+#         charset utf-8;
+#         try_files $uri =404;
+#         add_header Cache-Control "no-cache";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#
+#     location ^~ /_astro/ {
+#         try_files $uri =404;
+#         add_header Cache-Control "public, max-age=31536000, immutable";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#
+#     location ^~ /_cms/ {
+#         alias /data/apps/example-project/be/storage/app/cms-public/;
+#         try_files $uri =404;
+#         types { image/png png; image/jpeg jpg; image/webp webp; image/avif avif; }
+#         default_type application/octet-stream;
+#         add_header Cache-Control "public, max-age=31536000, immutable";
+#         add_header Content-Security-Policy "default-src 'none'; img-src 'self'; sandbox" always;
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#
+#     # Uploads of the admin, assets of the admin panel (same locations as on the subdomain).
+#     location ^~ /cms-media/ {
+#         alias /data/apps/example-project/be/storage/app/cms-media/;
+#         try_files $uri =404;
+#         types { image/png png; image/jpeg jpg jpeg; image/webp webp; image/avif avif; }
+#         default_type application/octet-stream;
+#         add_header Cache-Control "public, max-age=86400";
+#         add_header Content-Security-Policy "default-src 'none'; img-src 'self'; sandbox" always;
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#     location ^~ /build/ {
+#         root /data/apps/example-project/be/public;
+#         try_files $uri =404;
+#         add_header Cache-Control "public, max-age=31536000, immutable";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#     location ^~ /css/filament/ {
+#         root /data/apps/example-project/be/public;
+#         add_header Cache-Control "public, max-age=604800";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#     location ^~ /js/filament/ {
+#         root /data/apps/example-project/be/public;
+#         add_header Cache-Control "public, max-age=604800";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#     location ^~ /fonts/filament/ {
+#         root /data/apps/example-project/be/public;
+#         add_header Cache-Control "public, max-age=2592000";
+#         include /etc/nginx/snippets/security-headers.conf;
+#     }
+#
+#     # The backend's own paths only.
+#     location ~ ^/(admin|cms-api|forms|livewire[^/]*)(/|$)|^/up$ {
+#         fastcgi_pass example-project-be;
+#         include fastcgi_params;
+#         fastcgi_param SCRIPT_FILENAME /var/www/public/index.php;
+#         fastcgi_hide_header X-Powered-By;
+#         fastcgi_param HTTP_X_FORWARDED_PROTO $http_x_forwarded_proto;
+#         fastcgi_param HTTP_X_FORWARDED_FOR $http_x_forwarded_for;
+#
+#         set $custom_https off;
+#         if ($http_x_forwarded_proto = 'https') {
+#             set $custom_https on;
+#         }
+#         fastcgi_param HTTPS $custom_https;
+#
+#         fastcgi_read_timeout 300;
+#     }
+# }

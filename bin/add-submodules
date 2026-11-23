@@ -1,0 +1,39 @@
+#!/bin/sh
+# Adds the two halves of the site as git submodules: `frontend` (repository created from the astro-cms-frontend template) and
+# `backend` (repository created from the laravel-cms template). Run it once, in the git repository of this monorepo:
+#
+#   git init && sh bin/add-submodules git@github.com:<org>/<site>-frontend.git git@github.com:<org>/<site>-backend.git
+#   composer submodules -- <frontend-url> <backend-url>       # the same through Composer
+#
+# Both repositories must already exist (create them from the templates first); the script does not create or push anything,
+# it only records the submodules in .gitmodules and checks them out. Commit the result.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: sh bin/add-submodules <frontend-repository-url> <backend-repository-url>" >&2
+    exit 2
+fi
+
+frontend_url=$1
+backend_url=$2
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "This directory is not a git repository: run 'git init' first." >&2
+    exit 1
+fi
+
+for directory in frontend backend; do
+    if [ -e "$directory" ]; then
+        echo "'$directory' already exists; remove it or add the submodule by hand." >&2
+        exit 1
+    fi
+done
+
+git submodule add "$frontend_url" frontend
+git submodule add "$backend_url" backend
+
+echo
+echo "Added the submodules 'frontend' and 'backend' (see .gitmodules). Next:"
+echo "  git commit -m 'Add the frontend and backend submodules'"
+echo "  git submodule update --init --recursive    # on every other checkout"
+echo "The submodule pointers move when a half is released (git add frontend backend)."
