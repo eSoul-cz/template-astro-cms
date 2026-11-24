@@ -14,6 +14,13 @@ with its own pipeline. Nothing is built or deployed from here.
 | `docker/nginx.example` | One NGINX site definition for the site and the backend (backend on a subdomain; the path variant is commented). |
 | `bin/add-submodules` | Adds the two repositories as submodules (`composer submodules -- <frontend-url> <backend-url>` does the same). |
 
+## Getting started
+
+1. Clone with the submodules: `git clone --recurse-submodules git@github.com:eSoul-cz/<repository>.git` (an existing clone: `git submodule update --init --recursive`).
+2. Agent skills: in each repository that has a `skills-lock.json`, `npx skills experimental_install` restores the pinned set. Optional personal layers (installed once per user, not part of the project): `npx @esoul-cz/skills install project helpers`; `npx @esoul-cz/skills layers` lists them.
+3. Local environment: [Local development](#local-development), and the README of the backend and the frontend.
+4. Access, asked from the project lead or devops: the Freelo project (`CONTEXT.md` › Freelo), the Jenkins jobs of the backend and the frontend (the `Jenkins` check runs on every pull request) and the project's vault in 1Password (secrets, the export token and staging logins live there, never in Git). Then read `AGENTS.md` and `CONTEXT.md`.
+
 ## Setup
 
 1. Create the two repositories from the templates (`composer create-project esoul-cz/template-astro-cms-frontend:dev-main` and
