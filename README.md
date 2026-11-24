@@ -16,8 +16,8 @@ with its own pipeline. Nothing is built or deployed from here.
 
 ## Setup
 
-1. Create the two repositories from the templates (`composer create-project esoul-cz/template-astro-cms-frontend` and
-   `composer create-project esoul-cz/template-laravel-cms`, or the Packagist-less equivalent), push each to its own GitHub repository.
+1. Create the two repositories from the templates (`composer create-project esoul-cz/template-astro-cms-frontend:dev-main` and
+   `composer create-project esoul-cz/template-laravel-cms:dev-main`; the variants are published as `dev-main` only, so Composer needs the version, or the Packagist-less equivalent), push each to its own GitHub repository.
 2. In this repository (`git init` first): `sh bin/add-submodules <frontend-repository-url> <backend-repository-url>`, then commit
    `.gitmodules` and the two pointers. Every other checkout runs `git submodule update --init --recursive`.
 3. Fill `CONTEXT.md` (archetype `C-headless`, where the backend lives, business time zone, tasking) and set up the two repositories
