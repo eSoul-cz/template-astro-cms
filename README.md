@@ -16,10 +16,10 @@ with its own pipeline. Nothing is built or deployed from here.
 
 ## Getting started
 
-1. Clone with the submodules: `git clone --recurse-submodules git@github.com:eSoul-cz/<repository>.git` (an existing clone: `git submodule update --init --recursive`).
-2. Agent skills: in each repository that has a `skills-lock.json`, `npx skills experimental_install` restores the pinned set. Optional personal layers (installed once per user, not part of the project): `npx @esoul-cz/skills install project helpers`; `npx @esoul-cz/skills layers` lists them.
+1. Clone with the submodules: `git clone --recurse-submodules git@github.com:eSoul-cz/<repository>.git` (an existing clone: `git submodule update --init --recursive`), then `git lfs pull` where a repository keeps `assets/` or `.pen` files in LFS.
+2. Agent skills: each repository commits its `skills-lock.json` and `.agents/skills/`, so they come with the clone; `npx skills experimental_install` restores or refreshes them. Optional personal layers (installed once per user, not part of the project): `npx @esoul-cz/skills install project helpers`; `npx @esoul-cz/skills layers` lists them.
 3. Local environment: [Local development](#local-development), and the README of the backend and the frontend.
-4. Access, asked from the project lead or devops: the Freelo project (`CONTEXT.md` › Freelo), the Jenkins jobs of the backend and the frontend (the `Jenkins` check runs on every pull request) and the project's vault in 1Password (secrets, the export token and staging logins live there, never in Git). Then read `AGENTS.md` and `CONTEXT.md`.
+4. Access, asked from the project lead or devops: the GitHub repositories, the Freelo project (`CONTEXT.md` › Freelo), the Jenkins jobs of the backend and the frontend (the `Jenkins` check runs on every pull request), Komodo (read-only, for the stacks and their logs) and the project's vault in 1Password (secrets, the export token and staging logins live there, never in Git). Then read `AGENTS.md` and `CONTEXT.md`.
 
 ## Setup
 
