@@ -1,2 +1,4 @@
 /vendor/
 .DS_Store
+# Local, non-anonymised client material (general/security-and-data.md)
+/_reference/
