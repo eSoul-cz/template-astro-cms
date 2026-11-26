@@ -2,7 +2,7 @@
     "name": "esoul-cz/template-astro-cms",
     "description": "eSoul monorepo root of a static Astro site with a headless CMS: README, the contract, one NGINX site, and git submodules for the frontend and the backend.",
     "require-dev": {
-        "esoul-cz/guidelines": "^0.5"
+        "esoul-cz/guidelines": "^0.6"
     },
     "scripts": {
         "post-update-cmd": [
