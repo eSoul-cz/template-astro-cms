@@ -235,6 +235,11 @@ server {
         # Image uploads and the export (which copies media) can take longer than the default 60 s.
         fastcgi_read_timeout 300;
     }
+
+    # Further paths of the backend that an addon adds (a location like the one above, e.g. /pulse). A slot of the template: keep this line.
+    # Only this server has the slot. The commented path variant below does not: an addon's location is added by hand there, as a path in the
+    # list of the `location ~ ^/(admin|...)` of that block.
+    # @esoul-slot php-locations
 }
 
 # ====================================================================================================================

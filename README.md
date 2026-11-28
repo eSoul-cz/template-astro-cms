@@ -125,3 +125,9 @@ deletes files that no build of the last 7 days referenced. Rollback is redeployi
   add one, run `vendor/bin/esoul-guidelines check` after `composer install` (the version of its `composer.lock`).
   The submodules have no `vendor/`: their READMEs ("Guidelines") show how to run the command without PHP in the project (Composer global, the PHAR of the
   recorded version, Docker), and the `astroPipeline` of their `Jenkinsfile` runs `check` with the version recorded in their `esoul-guidelines.lock`.
+
+## Addons
+
+The addons this project took are listed in `.esoul/template.json`; their documentation is linked below.
+
+<!-- @esoul-slot addons -->
